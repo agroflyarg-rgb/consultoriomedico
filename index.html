@@ -265,17 +265,17 @@ const SUPABASE_URL_KEY = 'sb_url';
 const SUPABASE_KEY_KEY = 'sb_key';
 const OBRAS_KEY = 'obras_extra';
 
-let sbUrl = '', sbKey = '', consultas = [], editandoId = null;
+let sbUrl = 'https://zntsxmhqwczzboyvsrwd.supabase.co', sbKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpudHN4bWhxd2N6emJveXZzcndkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MTQyNzQsImV4cCI6MjA5NTk5MDI3NH0.yr5anFBuD9uERKgiBCslSjD3QJGAwPl1YwbW57hYYXk', consultas = [], editandoId = null;
 
 const DEFAULT_OBRAS = ['OSDE','Swiss Medical','Galeno','IOMA','PAMI','APRES','Medicus','Sancor Salud','Particular (sin obra social)'];
 let obrasExtra = [];
 
 function loadAll() {
-  sbUrl = localStorage.getItem(SUPABASE_URL_KEY) || '';
-  sbKey = localStorage.getItem(SUPABASE_KEY_KEY) || '';
+  sbUrl = sbUrl || localStorage.getItem(SUPABASE_URL_KEY) || '';
+  sbKey = sbKey || localStorage.getItem(SUPABASE_KEY_KEY) || '';
   try { obrasExtra = JSON.parse(localStorage.getItem(OBRAS_KEY) || '[]'); } catch(e) { obrasExtra = []; }
-  if (sbUrl) document.getElementById('cfg-url').value = sbUrl;
-  if (sbKey) document.getElementById('cfg-key').value = sbKey;
+  document.getElementById('cfg-url').value = sbUrl;
+  document.getElementById('cfg-key').value = sbKey;
   renderSelectObra();
   renderObrasList();
   document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
@@ -439,11 +439,7 @@ async function cargarDashboard() {
   const dashAlert = document.getElementById('dash-alert');
   dashAlert.className = 'alert alert-info show';
   dashAlert.textContent = 'Cargando...';
-  if (!sbUrl || !sbKey) {
-    dashAlert.className = 'alert alert-warn show';
-    dashAlert.textContent = '⚠️ Configurá Supabase en la pestaña Configuración para ver los datos.';
-    return;
-  }
+
   const data = await fetchConsultas();
   dashAlert.className = 'alert';
   const hoy = new Date(), mes = hoy.getMonth(), anio = hoy.getFullYear();
