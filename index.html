@@ -165,7 +165,7 @@
 
   <div id="sec-pacientes" class="section">
     <div class="card">
-      <div class="card-title">📋 Listado de consultas</div>
+      <div class="card-title">📋 Listado de pacientes</div>
       <div class="search-bar"><input type="text" id="search-input" placeholder="🔍 Buscar por nombre, apellido, diagnóstico u obra social..." oninput="filtrarTabla()" /></div>
       <div id="pac-alert" class="alert"></div>
       <div class="table-wrap">
@@ -348,13 +348,23 @@ async function guardarConsulta() {
   }
 
   document.getElementById('save-status').textContent = 'Guardando...';
-  const payload = { nombre, apellido, fecha, obra_social: obra, diagnostico: diag, telefono };
+  const payload = { nombre, apellido, fecha, obra_social: obra, diagnostico: diag };
+  if (telefono) payload.telefono = telefono;
   try {
     let error;
     if (editandoId) {
       ({ error } = await db.from('consultas').update(payload).eq('id', editandoId));
     } else {
       ({ error } = await db.from('consultas').insert(payload));
+    }
+    // Fallback: retry without telefono if column not found in schema cache
+    if (error && error.message && error.message.includes('telefono')) {
+      const payloadSinTel = { nombre: payload.nombre, apellido: payload.apellido, fecha: payload.fecha, obra_social: payload.obra_social, diagnostico: payload.diagnostico };
+      if (editandoId) {
+        ({ error } = await db.from('consultas').update(payloadSinTel).eq('id', editandoId));
+      } else {
+        ({ error } = await db.from('consultas').insert(payloadSinTel));
+      }
     }
     if (!error) {
       showAlert('form-alert', 'success', editandoId ? '✅ Consulta actualizada.' : '✅ Consulta guardada correctamente.');
