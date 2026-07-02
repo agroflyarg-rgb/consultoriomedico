@@ -83,6 +83,7 @@
   @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .metrics { grid-template-columns: 1fr; } .content { padding: 1rem; } .nav-btn { padding: 10px 12px; font-size: 12px; } }
 
   .pac-row:hover td { background: #eff6ff !important; }
+  .dup-warning { background:#fffbeb; border:1px solid #fde68a; color:#92400e; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:500; margin-top:8px; display:none; }
   .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center; padding:1rem; }
   .modal { background:#fff; border-radius:16px; width:100%; max-width:700px; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.25); overflow:hidden; }
   .modal-header { background:linear-gradient(135deg,#0c447c,#378add); padding:1.25rem 1.5rem; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
@@ -136,8 +137,9 @@
       <div class="card-title">📋 Registrar nuevo paciente</div>
       <div id="form-alert" class="alert"></div>
       <div class="form-grid">
-        <div class="form-group"><label>Nombre</label><input type="text" id="f-nombre" placeholder="Ej: Juan" /></div>
-        <div class="form-group"><label>Apellido</label><input type="text" id="f-apellido" placeholder="Ej: García" /></div>
+        <div class="form-group"><label>Nombre</label><input type="text" id="f-nombre" placeholder="Ej: Juan" onblur="checkDuplicado()" /></div>
+        <div class="form-group"><label>Apellido</label><input type="text" id="f-apellido" placeholder="Ej: García" onblur="checkDuplicado()" /></div>
+        <div class="form-group"><label>Teléfono de contacto</label><input type="text" id="f-telefono" placeholder="Ej: 3624-123456" /></div>
         <div class="form-group"><label>Fecha de consulta</label><input type="date" id="f-fecha" /></div>
         <div class="form-group">
           <label>Obra social</label>
@@ -153,6 +155,7 @@
         </div>
         <div class="form-group full"><label>Diagnóstico</label><textarea id="f-diagnostico" placeholder="Descripción del diagnóstico y tratamiento indicado..."></textarea></div>
       </div>
+      <div id="dup-warning" class="dup-warning">⚠️ Este paciente ya está registrado. Podés igualmente agregar una nueva consulta.</div>
       <div style="margin-top:1.25rem;display:flex;gap:10px;align-items:center;">
         <button class="btn-primary" id="btn-guardar" onclick="guardarConsulta()">💾 Guardar consulta</button>
         <span id="save-status" style="font-size:13px;color:#64748b;"></span>
@@ -315,14 +318,37 @@ async function guardarConsulta() {
   const fecha = document.getElementById('f-fecha').value;
   const obra = document.getElementById('f-obra').value;
   const diag = document.getElementById('f-diagnostico').value.trim();
+  const telefono = document.getElementById('f-telefono').value.trim();
   if (!nombre || !apellido || !fecha || !diag) {
     showAlert('form-alert', 'error', '❌ Completá nombre, apellido, fecha y diagnóstico.');
     return;
   }
   const btn = document.getElementById('btn-guardar');
   btn.disabled = true;
+  document.getElementById('save-status').textContent = 'Verificando...';
+
+  // Check for duplicate patient (only on new, not edit)
+  if (!editandoId) {
+    const existe = consultas.find(c =>
+      c.nombre.toLowerCase() === nombre.toLowerCase() &&
+      c.apellido.toLowerCase() === apellido.toLowerCase()
+    );
+    if (existe) {
+      // Show warning but allow to continue
+      const continuar = confirm(
+        '⚠️ El paciente ' + nombre + ' ' + apellido + ' ya está registrado en el sistema.\n\n' +
+        '¿Querés registrar una nueva consulta para este paciente de todas formas?'
+      );
+      if (!continuar) {
+        btn.disabled = false;
+        document.getElementById('save-status').textContent = '';
+        return;
+      }
+    }
+  }
+
   document.getElementById('save-status').textContent = 'Guardando...';
-  const payload = { nombre, apellido, fecha, obra_social: obra, diagnostico: diag };
+  const payload = { nombre, apellido, fecha, obra_social: obra, diagnostico: diag, telefono };
   try {
     let error;
     if (editandoId) {
@@ -345,7 +371,7 @@ async function guardarConsulta() {
 }
 
 function limpiarFormulario() {
-  ['f-nombre','f-apellido','f-diagnostico'].forEach(id => document.getElementById(id).value = '');
+  ['f-nombre','f-apellido','f-diagnostico','f-telefono'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('f-obra').value = '';
   document.getElementById('btn-guardar').innerHTML = '💾 Guardar consulta';
@@ -428,6 +454,9 @@ function verHistoria(nombreEnc, apellidoEnc) {
   const modal = document.getElementById('modal-historia');
   document.getElementById('modal-nombre').textContent = nombre + ' ' + apellido;
   document.getElementById('modal-obra').textContent = historial[0]?.obra_social || '–';
+  const tel = historial[0]?.telefono;
+  const telSpan = document.getElementById('modal-tel');
+  if (tel) { telSpan.textContent = tel; telSpan.parentElement.style.display=''; } else { telSpan.parentElement.style.display='none'; }
   document.getElementById('modal-total').textContent = historial.length + ' consulta' + (historial.length!==1?'s':'');
 
   const tbody = document.getElementById('modal-tbody');
@@ -466,6 +495,7 @@ function editarConsulta(id) {
   document.getElementById('f-fecha').value = c.fecha;
   renderSelectObra(c.obra_social||'');
   document.getElementById('f-diagnostico').value = c.diagnostico||'';
+  document.getElementById('f-telefono').value = c.telefono||'';
   document.getElementById('btn-guardar').innerHTML = '💾 Actualizar consulta';
   showSection('nueva');
   showAlert('form-alert','info','✏️ Editando consulta de ' + c.nombre + ' ' + c.apellido);
@@ -511,6 +541,19 @@ function iniciarRealtime() {
     .subscribe();
 }
 
+function checkDuplicado() {
+  if (editandoId) return;
+  const nombre = document.getElementById('f-nombre').value.trim();
+  const apellido = document.getElementById('f-apellido').value.trim();
+  const warn = document.getElementById('dup-warning');
+  if (!nombre || !apellido) { warn.style.display='none'; return; }
+  const existe = consultas.find(c =>
+    c.nombre.toLowerCase() === nombre.toLowerCase() &&
+    c.apellido.toLowerCase() === apellido.toLowerCase()
+  );
+  warn.style.display = existe ? 'block' : 'none';
+}
+
 loadAll();
 cargarDashboard();
 iniciarRealtime();
@@ -521,9 +564,10 @@ iniciarRealtime();
     <div class="modal-header">
       <div>
         <h2>📋 Historia clínica — <span id="modal-nombre"></span></h2>
-        <div class="modal-meta">
+        <div class="modal-meta" id="modal-meta">
           <span>🏥 <span id="modal-obra"></span></span>
           <span>📅 <span id="modal-total"></span></span>
+          <span>📞 <span id="modal-tel"></span></span>
         </div>
       </div>
       <button class="modal-close" onclick="cerrarModal()">✕</button>
