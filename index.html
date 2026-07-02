@@ -81,6 +81,19 @@
   .step-body strong { font-size: 14px; font-weight: 600; color: #1a202c; }
   .step-body p { font-size: 13px; color: #475569; margin-top: 3px; line-height: 1.6; }
   @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .metrics { grid-template-columns: 1fr; } .content { padding: 1rem; } .nav-btn { padding: 10px 12px; font-size: 12px; } }
+
+  .pac-row:hover td { background: #eff6ff !important; }
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center; padding:1rem; }
+  .modal { background:#fff; border-radius:16px; width:100%; max-width:700px; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.25); overflow:hidden; }
+  .modal-header { background:linear-gradient(135deg,#0c447c,#378add); padding:1.25rem 1.5rem; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+  .modal-header h2 { color:#fff; font-size:18px; font-weight:700; margin:0; }
+  .modal-meta { display:flex; gap:10px; margin-top:6px; flex-wrap:wrap; }
+  .modal-meta span { background:rgba(255,255,255,0.2); color:#fff; font-size:12px; padding:3px 10px; border-radius:999px; }
+  .modal-close { background:rgba(255,255,255,0.2); border:none; color:#fff; width:32px; height:32px; border-radius:50%; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .modal-close:hover { background:rgba(255,255,255,0.35); }
+  .modal-body { overflow-y:auto; padding:1.25rem 1.5rem; }
+  .modal-body table { width:100%; }
+  .modal-body th { background:#f8fafc; }
 </style>
 </head>
 <body>
@@ -95,7 +108,7 @@
 
 <nav class="nav">
   <button class="nav-btn active" onclick="showSection('dashboard')" id="nav-dashboard">📊 Inicio</button>
-  <button class="nav-btn" onclick="showSection('nueva')" id="nav-nueva">➕ Nueva consulta</button>
+  <button class="nav-btn" onclick="showSection('nueva')" id="nav-nueva">➕ Nuevo paciente</button>
   <button class="nav-btn" onclick="showSection('pacientes')" id="nav-pacientes">👥 Pacientes</button>
   <button class="nav-btn" onclick="showSection('config')" id="nav-config">⚙️ Configuración</button>
 </nav>
@@ -120,7 +133,7 @@
 
   <div id="sec-nueva" class="section">
     <div class="card">
-      <div class="card-title">📋 Registrar nueva consulta</div>
+      <div class="card-title">📋 Registrar nuevo paciente</div>
       <div id="form-alert" class="alert"></div>
       <div class="form-grid">
         <div class="form-group"><label>Nombre</label><input type="text" id="f-nombre" placeholder="Ej: Juan" /></div>
@@ -153,7 +166,7 @@
       <div class="search-bar"><input type="text" id="search-input" placeholder="🔍 Buscar por nombre, apellido, diagnóstico u obra social..." oninput="filtrarTabla()" /></div>
       <div id="pac-alert" class="alert"></div>
       <div class="table-wrap">
-        <table><thead><tr><th>Nombre</th><th>Apellido</th><th>Fecha</th><th>Obra social</th><th>Diagnóstico</th><th>Acciones</th></tr></thead>
+        <table><thead><tr><th>Paciente</th><th>Última consulta</th><th>Obra social</th><th>Consultas</th><th>Último diagnóstico</th><th>Acciones</th></tr></thead>
         <tbody id="pac-tbody"></tbody></table>
       </div>
     </div>
@@ -380,16 +393,59 @@ async function cargarPacientes() {
 function renderTabla(data) {
   const tbody = document.getElementById('pac-tbody');
   if (!data.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:2rem;">No se encontraron resultados.</td></tr>'; return; }
-  tbody.innerHTML = data.map(c => `
+  // Group by patient name
+  const pacientes = {};
+  data.forEach(c => {
+    const key = (c.nombre + '|' + c.apellido).toLowerCase();
+    if (!pacientes[key]) pacientes[key] = { nombre: c.nombre, apellido: c.apellido, consultas: [] };
+    pacientes[key].consultas.push(c);
+  });
+  tbody.innerHTML = Object.values(pacientes).map(p => {
+    const ultima = p.consultas[0];
+    return `
+    <tr class="pac-row" onclick="verHistoria('${encodeURIComponent(p.nombre)}','${encodeURIComponent(p.apellido)}')" style="cursor:pointer;" title="Ver historia clínica">
+      <td><strong>${p.nombre} ${p.apellido}</strong></td>
+      <td>${formatFecha(ultima.fecha)}</td>
+      <td><span class="badge badge-blue">${ultima.obra_social||'–'}</span></td>
+      <td>${p.consultas.length} consulta${p.consultas.length!==1?'s':''}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ultima.diagnostico||''}">${ultima.diagnostico||'–'}</td>
+      <td style="display:flex;gap:6px;" onclick="event.stopPropagation()">
+        <button class="btn-sm-edit" onclick="editarConsulta('${ultima.id}')">✏️ Editar</button>
+        <button class="btn-sm-del" onclick="eliminarConsulta('${ultima.id}')">🗑️ Borrar</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function verHistoria(nombreEnc, apellidoEnc) {
+  const nombre = decodeURIComponent(nombreEnc);
+  const apellido = decodeURIComponent(apellidoEnc);
+  const historial = consultas.filter(c =>
+    c.nombre.toLowerCase() === nombre.toLowerCase() &&
+    c.apellido.toLowerCase() === apellido.toLowerCase()
+  ).sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+
+  const modal = document.getElementById('modal-historia');
+  document.getElementById('modal-nombre').textContent = nombre + ' ' + apellido;
+  document.getElementById('modal-obra').textContent = historial[0]?.obra_social || '–';
+  document.getElementById('modal-total').textContent = historial.length + ' consulta' + (historial.length!==1?'s':'');
+
+  const tbody = document.getElementById('modal-tbody');
+  tbody.innerHTML = historial.map((c,i) => `
     <tr>
-      <td>${c.nombre}</td><td>${c.apellido}</td><td>${formatFecha(c.fecha)}</td>
-      <td><span class="badge badge-blue">${c.obra_social||'–'}</span></td>
-      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${c.diagnostico||''}">${c.diagnostico||'–'}</td>
+      <td style="font-weight:600;color:#185fa5;">#${historial.length - i}</td>
+      <td>${formatFecha(c.fecha)}</td>
+      <td style="white-space:pre-wrap;max-width:340px;">${c.diagnostico||'–'}</td>
       <td style="display:flex;gap:6px;">
-        <button class="btn-sm-edit" onclick="editarConsulta('${c.id}')">✏️ Editar</button>
-        <button class="btn-sm-del" onclick="eliminarConsulta('${c.id}')">🗑️ Borrar</button>
+        <button class="btn-sm-edit" onclick="editarConsulta('${c.id}');cerrarModal()">✏️</button>
+        <button class="btn-sm-del" onclick="eliminarConsulta('${c.id}');cerrarModal()">🗑️</button>
       </td>
     </tr>`).join('');
+  modal.style.display = 'flex';
+}
+
+function cerrarModal() {
+  document.getElementById('modal-historia').style.display = 'none';
 }
 
 function filtrarTabla() {
@@ -459,5 +515,28 @@ loadAll();
 cargarDashboard();
 iniciarRealtime();
 </script>
+
+<div class="modal-overlay" id="modal-historia" onclick="if(event.target===this)cerrarModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2>📋 Historia clínica — <span id="modal-nombre"></span></h2>
+        <div class="modal-meta">
+          <span>🏥 <span id="modal-obra"></span></span>
+          <span>📅 <span id="modal-total"></span></span>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Fecha</th><th>Diagnóstico</th><th>Acciones</th></tr></thead>
+          <tbody id="modal-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
