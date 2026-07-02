@@ -108,6 +108,7 @@
     .nav-btn { padding: 10px 12px; font-size: 12px; }
   }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
@@ -115,7 +116,7 @@
   <div class="header-icon">🏥</div>
   <div class="header-text">
     <h1>Consultorios Médicos Andrés José Lozina</h1>
-    <p>Sistema de gestión de pacientes y consultas</p>
+    <p>Sistema de gestión de pacientes y consultas &nbsp;<span id="rt-indicator" style="font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:999px;opacity:0;transition:opacity 0.4s;">🔄 Actualizado</span></p>
   </div>
 </div>
 
@@ -394,22 +395,21 @@ async function guardarConsulta() {
   document.getElementById('save-status').textContent = 'Guardando...';
   const payload = { nombre, apellido, fecha, obra_social: obra, diagnostico: diag };
   try {
-    const url = editandoId ? `${sbUrl}/rest/v1/consultas?id=eq.${editandoId}` : `${sbUrl}/rest/v1/consultas`;
-    const method = editandoId ? 'PATCH' : 'POST';
-    const r = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json', apikey: sbKey, Authorization: `Bearer ${sbKey}`, Prefer: 'return=representation' },
-      body: JSON.stringify(payload)
-    });
-    if (r.ok) {
+    const client = supabase.createClient(sbUrl, sbKey);
+    let error;
+    if (editandoId) {
+      ({ error } = await client.from('consultas').update(payload).eq('id', editandoId));
+    } else {
+      ({ error } = await client.from('consultas').insert(payload));
+    }
+    if (!error) {
       showAlert('form-alert', 'success', editandoId ? '✅ Consulta actualizada.' : '✅ Consulta guardada correctamente.');
       limpiarFormulario();
     } else {
-      const t = await r.text();
-      showAlert('form-alert', 'error', '❌ Error al guardar: ' + r.status + ' — ' + t);
+      showAlert('form-alert', 'error', '❌ Error al guardar: ' + error.message);
     }
   } catch(e) {
-    showAlert('form-alert', 'error', '❌ No se pudo conectar con Supabase. Verificá la configuración.');
+    showAlert('form-alert', 'error', '❌ No se pudo conectar con Supabase.');
   }
   btn.disabled = false;
   document.getElementById('save-status').textContent = '';
@@ -424,10 +424,20 @@ function limpiarFormulario() {
   cancelarNuevaObra();
 }
 
+
 async function fetchConsultas() {
   if (!sbUrl || !sbKey) return [];
   try {
-    const r = await fetch(`${sbUrl}/rest/v1/consultas?order=created_at.desc`, {
+    const client = supabase.createClient(sbUrl, sbKey);
+    const { data, error } = await client
+      .from('consultas')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (!error && data) { consultas = data; return consultas; }
+  } catch(e) {}
+  return consultas;
+}
+/rest/v1/consultas?order=created_at.desc`, {
       headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` }
     });
     if (r.ok) { consultas = await r.json(); return consultas; }
@@ -509,10 +519,8 @@ function editarConsulta(id) {
 async function eliminarConsulta(id) {
   if (!confirm('¿Eliminar esta consulta?')) return;
   try {
-    await fetch(`${sbUrl}/rest/v1/consultas?id=eq.${id}`, {
-      method: 'DELETE',
-      headers: { apikey: sbKey, Authorization: `Bearer ${sbKey}` }
-    });
+    const client = supabase.createClient(sbUrl, sbKey);
+    await client.from('consultas').delete().eq('id', id);
   } catch(e) {}
   consultas = consultas.filter(c => c.id!=id);
   renderTabla(consultas);
@@ -525,8 +533,50 @@ function formatFecha(f) {
   return `${d}/${m}/${a}`;
 }
 
+
+// ── Tiempo real ──────────────────────────────────────────
+let realtimeChannel = null;
+
+function iniciarRealtime() {
+  if (!sbUrl || !sbKey) return;
+  if (realtimeChannel) realtimeChannel.unsubscribe();
+
+  const client = supabase.createClient(sbUrl, sbKey);
+
+  realtimeChannel = client
+    .channel('consultas-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'consultas' }, payload => {
+      // Actualizar lista local
+      if (payload.eventType === 'INSERT') {
+        consultas.unshift(payload.new);
+      } else if (payload.eventType === 'UPDATE') {
+        const idx = consultas.findIndex(c => c.id === payload.new.id);
+        if (idx !== -1) consultas[idx] = payload.new;
+      } else if (payload.eventType === 'DELETE') {
+        consultas = consultas.filter(c => c.id !== payload.old.id);
+      }
+      // Refrescar vista activa
+      const secActiva = document.querySelector('.section.active');
+      if (secActiva && secActiva.id === 'sec-dashboard') cargarDashboard();
+      if (secActiva && secActiva.id === 'sec-pacientes') renderTabla(consultas);
+      // Indicador visual
+      mostrarIndicadorRealtime();
+    })
+    .subscribe();
+}
+
+function mostrarIndicadorRealtime() {
+  const ind = document.getElementById('rt-indicator');
+  if (!ind) return;
+  ind.style.opacity = '1';
+  ind.textContent = '🔄 Actualizado';
+  setTimeout(() => { ind.style.opacity = '0'; }, 2500);
+}
+// ─────────────────────────────────────────────────────────
+
 loadAll();
 cargarDashboard();
+iniciarRealtime();
 </script>
 </body>
 </html>
