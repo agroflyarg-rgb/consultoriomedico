@@ -225,6 +225,8 @@ tbody tr:hover td { background: #f8fafc; }
       <div class="form-grid cols3">
         <div class="form-group"><label>Nombre</label><input type="text" id="t-nombre" placeholder="Ej: Juan" onblur="checkDup()" /></div>
         <div class="form-group"><label>Apellido</label><input type="text" id="t-apellido" placeholder="Ej: García" onblur="checkDup()" /></div>
+        <div class="form-group"><label>DNI</label><input type="text" id="t-dni" placeholder="Ej: 30123456" /></div>
+        <div class="form-group"><label>Fecha de nacimiento</label><input type="date" id="t-fnac" /></div>
         <div class="form-group"><label>Teléfono</label><input type="text" id="t-telefono" placeholder="Ej: 3624-123456" /></div>
         <div class="form-group">
           <label>Obra social</label>
@@ -267,7 +269,7 @@ tbody tr:hover td { background: #f8fafc; }
         <input type="date" id="filtro-fecha" onchange="cargarTurnos()" />
       </div>
       <div class="table-wrap">
-        <table><thead><tr><th>Paciente</th><th>Teléfono</th><th>Obra social</th><th>Monto</th><th>Pago</th><th>Acciones</th></tr></thead>
+        <table><thead><tr><th>Paciente</th><th>DNI</th><th>F. Nacimiento</th><th>Teléfono</th><th>Obra social</th><th>Monto</th><th>Pago</th><th>Acciones</th></tr></thead>
         <tbody id="turnos-tbody"></tbody></table>
       </div>
     </div>
@@ -281,7 +283,7 @@ tbody tr:hover td { background: #f8fafc; }
         <input type="text" id="search-pac" placeholder="🔍 Buscar por nombre, apellido u obra social..." oninput="filtrarPacientes()" />
       </div>
       <div class="table-wrap">
-        <table><thead><tr><th>Paciente</th><th>Teléfono</th><th>Obra social</th><th>Turnos</th><th>Consultas HC</th><th>Acciones</th></tr></thead>
+        <table><thead><tr><th>Paciente</th><th>DNI</th><th>F. Nacimiento</th><th>Teléfono</th><th>Obra social</th><th>Turnos</th><th>Consultas HC</th><th>Acciones</th></tr></thead>
         <tbody id="pac-tbody"></tbody></table>
       </div>
     </div>
@@ -342,6 +344,8 @@ CREATE TABLE IF NOT EXISTS historia_clinica (
         <div class="modal-meta">
           <span>🏥 <span id="modal-obra"></span></span>
           <span>📞 <span id="modal-tel"></span></span>
+          <span>🪪 <span id="modal-dni"></span></span>
+          <span>🎂 <span id="modal-fnac"></span></span>
           <span>📅 <span id="modal-turnos-count"></span></span>
         </div>
       </div>
@@ -532,6 +536,8 @@ async function guardarTurno() {
   const fecha = document.getElementById('t-fecha').value;
   const pago = document.getElementById('t-pago').checked;
   const monto = parseFloat(document.getElementById('t-monto').value) || null;
+  const dni = document.getElementById('t-dni').value.trim();
+  const fnac = document.getElementById('t-fnac').value || null;
   if (!nombre || !apellido || !fecha) { showAlert('turno-alert','error','❌ Completá nombre, apellido y fecha.'); return; }
 
   const btn = document.getElementById('btn-turno');
@@ -548,15 +554,15 @@ async function guardarTurno() {
     if (existente) {
       pacienteId = existente.id;
       // Actualizar datos si cambiaron
-      await db.from('pacientes').update({ telefono: telefono||existente.telefono, obra_social: obra||existente.obra_social }).eq('id', pacienteId);
+      await db.from('pacientes').update({ telefono: telefono||existente.telefono, obra_social: obra||existente.obra_social, dni: dni||existente.dni, fecha_nacimiento: fnac||existente.fecha_nacimiento }).eq('id', pacienteId);
     } else {
-      const { data: newPac, error: errPac } = await db.from('pacientes').insert({ nombre, apellido, telefono, obra_social: obra }).select().single();
+      const { data: newPac, error: errPac } = await db.from('pacientes').insert({ nombre, apellido, telefono, obra_social: obra, dni, fecha_nacimiento: fnac }).select().single();
       if (errPac) throw errPac;
       pacienteId = newPac.id;
     }
 
     // Guardar turno
-    const payload = { paciente_id: pacienteId, nombre, apellido, obra_social: obra, telefono, fecha, pago, monto };
+    const payload = { paciente_id: pacienteId, nombre, apellido, obra_social: obra, telefono, dni, fecha_nacimiento: fnac, fecha, pago, monto };
     let error;
     if (editandoTurnoId) {
       ({ error } = await db.from('turnos').update(payload).eq('id', editandoTurnoId));
@@ -576,7 +582,7 @@ async function guardarTurno() {
 }
 
 function limpiarTurnoForm() {
-  ['t-nombre','t-apellido','t-telefono','t-monto'].forEach(id => document.getElementById(id).value = '');
+  ['t-nombre','t-apellido','t-telefono','t-monto','t-dni','t-fnac'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('t-obra').value = '';
   document.getElementById('t-fecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('t-pago').checked = false;
@@ -602,6 +608,8 @@ function renderTurnos(data) {
   tbody.innerHTML = data.map(t => `
     <tr>
       <td><strong>${t.nombre} ${t.apellido}</strong></td>
+      <td>${t.dni||'–'}</td>
+      <td>${t.fecha_nacimiento ? formatFecha(t.fecha_nacimiento) : '–'}</td>
       <td>${t.telefono||'–'}</td>
       <td><span class="badge badge-blue">${t.obra_social||'–'}</span></td>
       <td>${t.monto ? '$'+parseFloat(t.monto).toLocaleString('es-AR',{minimumFractionDigits:2}) : '–'}</td>
@@ -640,6 +648,8 @@ function editarTurno(id) {
   document.getElementById('t-telefono').value = t.telefono||'';
   renderSelectObra('t-obra', t.obra_social||'');
   document.getElementById('t-fecha').value = t.fecha;
+  document.getElementById('t-dni').value = t.dni||'';
+  document.getElementById('t-fnac').value = t.fecha_nacimiento||'';
   document.getElementById('t-pago').checked = t.pago;
   document.getElementById('pago-label-text').textContent = t.pago ? '✅ Pagó' : 'No pagó';
   document.getElementById('t-monto').value = t.monto||'';
@@ -677,6 +687,8 @@ function renderPacientes(data, turnoCount, hcCount) {
   tbody.innerHTML = data.map(p => `
     <tr class="clickable-row" onclick="abrirHistoria('${p.id}')">
       <td><strong>${p.nombre} ${p.apellido}</strong></td>
+      <td>${p.dni||'–'}</td>
+      <td>${p.fecha_nacimiento ? formatFecha(p.fecha_nacimiento) : '–'}</td>
       <td>${p.telefono||'–'}</td>
       <td><span class="badge badge-blue">${p.obra_social||'–'}</span></td>
       <td><span class="badge badge-amber">${tc[p.id]||0} turno${(tc[p.id]||0)!==1?'s':''}</span></td>
@@ -709,6 +721,8 @@ async function abrirHistoria(pacienteId) {
   document.getElementById('modal-nombre').textContent = pac.nombre + ' ' + pac.apellido;
   document.getElementById('modal-obra').textContent = pac.obra_social||'–';
   document.getElementById('modal-tel').textContent = pac.telefono||'–';
+  document.getElementById('modal-dni').textContent = pac.dni||'–';
+  document.getElementById('modal-fnac').textContent = pac.fecha_nacimiento ? formatFecha(pac.fecha_nacimiento) : '–';
   document.getElementById('hc-fecha').value = new Date().toISOString().split('T')[0];
   hideAlert('hc-alert');
   await Promise.all([cargarHC(pacienteId), cargarTurnosPaciente(pacienteId)]);
