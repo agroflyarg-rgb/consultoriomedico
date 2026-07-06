@@ -468,23 +468,14 @@ async function guardarTurno() {
   try {
     let pacienteId = null;
     const existente = pacientes.find(p => p.nombre.toLowerCase()===nombre.toLowerCase() && p.apellido.toLowerCase()===apellido.toLowerCase());
-    if (existente) {
-      pacienteId = existente.id;
-      const pacUpd = { telefono: telefono||existente.telefono, obra_social: obra||existente.obra_social };
-      if (dni) pacUpd.dni = dni;
-      if (fnac) pacUpd.fecha_nacimiento = fnac;
-      await db.from('pacientes').update(pacUpd).eq('id', pacienteId);
-    } else {
-      const pacIns = { nombre, apellido, telefono, obra_social: obra };
-      if (dni) pacIns.dni = dni;
-      if (fnac) pacIns.fecha_nacimiento = fnac;
-      const { data: newPac, error: errPac } = await db.from('pacientes').insert(pacIns).select().single();
-      if (errPac) throw errPac;
-      pacienteId = newPac.id;
-    }
+    // Usar función SQL para evitar error de schema cache con dni/fecha_nacimiento
+    const { data: rpcData, error: rpcErr } = await db.rpc('upsert_paciente', {
+      p_nombre: nombre, p_apellido: apellido, p_telefono: telefono||'',
+      p_obra_social: obra||'', p_dni: dni||'', p_fecha_nacimiento: fnac||null
+    });
+    if (rpcErr) throw rpcErr;
+    pacienteId = rpcData;
     const payload = { paciente_id: pacienteId, nombre, apellido, obra_social: obra, telefono, fecha, pago, monto };
-    if (dni) payload.dni = dni;
-    if (fnac) payload.fecha_nacimiento = fnac;
     if (tipo_consulta) payload.tipo_consulta = tipo_consulta;
     let error;
     if (editandoTurnoId) {
